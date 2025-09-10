@@ -77,7 +77,7 @@ def single_pattern_ui() -> Tuple[Dict[int, int], Dict[int, float]]:
         st.info("Select at least one weekday.")
         st.stop()
 
-    st.subheader("Hours per Day (Single Pattern)")
+    st.subheader("Hours per Day")
     same_hours = st.checkbox("Use the same hours per day for all selected weekdays", value=True)
     weekday_hours: Dict[int, float] = {}
     if same_hours:
