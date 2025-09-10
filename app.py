@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from typing import Dict, Tuple
 import pandas as pd
 
-st.set_page_config(page_title="Date Span Hours Counter (Alt Weeks)", page_icon="⏱️")
+st.set_page_config(page_title="Date Span Hours Calculator", page_icon="⏱️")
 st.title("⏱️ Date Span Hours Counter")
 
 # ---------------- Inputs: Date range ----------------
@@ -24,7 +24,7 @@ weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # ---------------- Pattern Settings ----------------
 st.divider()
-st.subheader("Pattern Settings")
+st.subheader("Settings")
 
 # New: PCA vs CDPAS toggle (checkbox = CDPAS on)
 cdpas_mode = st.checkbox(
