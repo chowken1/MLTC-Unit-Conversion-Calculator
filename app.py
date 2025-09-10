@@ -7,6 +7,9 @@ st.set_page_config(page_title="Date Span Hours Counter (Alt Weeks)", page_icon="
 st.title("⏱️ Date Span Hours Counter")
 
 # ---------------- Inputs: Date range ----------------
+
+st.subheader("Date Inputs")
+
 col1, col2 = st.columns(2)
 with col1:
     start_date = st.date_input("From date", value=date.today().replace(day=1))
