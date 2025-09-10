@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 from datetime import date, timedelta
 from typing import Dict, Tuple
@@ -20,15 +19,31 @@ if start_date > end_date:
 
 weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# ---------------- Alternating weeks toggle ----------------
+# ---------------- Pattern Settings ----------------
 st.divider()
 st.subheader("Pattern Settings")
 
-use_alt_weeks = st.checkbox(
-    "Enable alternating weeks (Week A / Week B)",
+# New: PCA vs CDPAS toggle (checkbox = CDPAS on)
+cdpas_mode = st.checkbox(
+    "CDPAS mode (weekly hours only)",
     value=False,
-    help="If enabled, the week containing the From date is Week A, and the next week is Week B, alternating thereafter (Mon–Sun weeks)."
+    help=(
+        "When enabled, CDPAS ignores weekday selection, alternating weeks, and unit conversion. "
+        "Enter a single 'Hours per week' and totals are prorated by the number of weeks in the date span."
+    ),
 )
+
+# Only show alternating-weeks toggle when using PCA
+use_alt_weeks = False
+if not cdpas_mode:
+    use_alt_weeks = st.checkbox(
+        "Enable alternating weeks (Week A / Week B)",
+        value=False,
+        help=(
+            "If enabled, the week containing the From date is Week A, and the next week is Week B, "
+            "alternating thereafter (Mon–Sun weeks)."
+        ),
+    )
 
 # ---------------- Helper: inclusive daterange generator ----------------
 def daterange_inclusive(start: date, end: date):
@@ -187,95 +202,137 @@ def alternating_pattern_ui() -> Tuple[Dict[str, Dict[int, int]], Dict[str, Dict[
 
     return counts, hours
 
-# ---------------- Unit Conversion ----------------
-st.subheader("Unit Conversion")
-unit_option = st.selectbox(
-    "Select unit conversion:",
-    ["Hourly", "15 mins", "Per diem"],
-    help="Hourly: hours stay the same. 15 mins: hours × 4. Per diem: ignore hours and count days."
-)
+# ---------------- PCA: Unit Conversion (hidden in CDPAS) ----------------
+if not cdpas_mode:
+    st.subheader("Unit Conversion")
+    unit_option = st.selectbox(
+        "Select unit conversion:",
+        ["Hourly", "15 mins", "Per diem"],
+        help="Hourly: hours stay the same. 15 mins: hours × 4. Per diem: ignore hours and count days."
+    )
 
 # ---------------- Compute & Display ----------------
-if not use_alt_weeks:
-    selected_counts, weekday_hours = single_pattern_ui()
+if cdpas_mode:
+    # --- CDPAS branch ---
+    st.subheader("CDPAS Settings")
+    hours_per_week = st.number_input(
+        "Hours per week",
+        min_value=0.0,
+        max_value=168.0,
+        step=0.25,
+        value=40.0,
+        help="Enter the approved weekly hours. Totals are prorated by (calendar days ÷ 7).",
+    )
 
     total_calendar_days = (end_date - start_date).days + 1
-    total_matching_days = sum(selected_counts.values())
-    base_hours = sum(selected_counts[wd] * weekday_hours.get(wd, 0.0) for wd in selected_counts)
+    weeks_in_span = total_calendar_days / 7.0  # prorated weeks
 
-    final_total = convert_total(base_hours, total_matching_days, unit_option)
-
-    st.divider()
-    st.subheader("Results (Single Pattern)")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("Total calendar days (inclusive)", total_calendar_days)
-    with c2:
-        st.metric("Days matching selection", total_matching_days)
-    with c3:
-        label = {"Hourly": "Total hours", "15 mins": "Total 15-min units", "Per diem": "Total per-diems (days)"}[unit_option]
-        st.metric(label, f"{final_total:,.2f}")
-
-    with st.expander("Breakdown by weekday"):
-        rows = []
-        for wd in sorted(selected_counts.keys()):
-            day_count = selected_counts[wd]
-            base = day_count * weekday_hours.get(wd, 0.0)
-            converted = convert_total(base, day_count, unit_option)
-            rows.append({
-                "Weekday": weekday_labels[wd],
-                "Count in range": day_count,
-                "Hours per day": weekday_hours.get(wd, 0.0),
-                "Converted total": converted
-            })
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-
-else:
-    counts_AB, hours_AB = alternating_pattern_ui()
-
-    total_calendar_days = (end_date - start_date).days + 1
-    # Summaries
-    total_days_A = sum(counts_AB["A"].values())
-    total_days_B = sum(counts_AB["B"].values())
-    total_matching_days = total_days_A + total_days_B
-
-    base_hours_A = sum(counts_AB["A"][wd] * hours_AB["A"].get(wd, 0.0) for wd in range(7))
-    base_hours_B = sum(counts_AB["B"][wd] * hours_AB["B"].get(wd, 0.0) for wd in range(7))
-    base_hours_total = base_hours_A + base_hours_B
-
-    final_total_A = convert_total(base_hours_A, total_days_A, unit_option)
-    final_total_B = convert_total(base_hours_B, total_days_B, unit_option)
-    final_total = final_total_A + final_total_B
+    total_hours = hours_per_week * weeks_in_span
+    total_15min_units = total_hours * 4
 
     st.divider()
-    st.subheader("Results (Alternating Weeks)")
+    st.subheader("Results (CDPAS)")
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.metric("Total calendar days (inclusive)", total_calendar_days)
     with c2:
-        st.metric("Days in Week A pattern", total_days_A)
+        st.metric("Weeks in range (prorated)", f"{weeks_in_span:,.2f}")
     with c3:
-        st.metric("Days in Week B pattern", total_days_B)
+        st.metric("Total hours", f"{total_hours:,.2f}")
     with c4:
-        label = {"Hourly": "Total hours", "15 mins": "Total 15-min units", "Per diem": "Total per-diems (days)"}[unit_option]
-        st.metric(label, f"{final_total:,.2f}")
+        st.metric("Total 15-min units", f"{total_15min_units:,.2f}")
 
-    with st.expander("Breakdown by pattern and weekday"):
-        rows = []
-        for bucket in ["A", "B"]:
-            for wd in range(7):
-                day_count = counts_AB[bucket][wd]
-                base = day_count * hours_AB[bucket].get(wd, 0.0)
+    with st.expander("Calculation details"):
+        st.write(
+            """
+            **Formula**: `Total hours = Hours per week × (calendar days ÷ 7)`.
+            The date span is inclusive of both From and To dates. 15-minute units are hours × 4.
+            """
+        )
+
+else:
+    # --- PCA branch (existing calculator) ---
+    if not use_alt_weeks:
+        selected_counts, weekday_hours = single_pattern_ui()
+
+        total_calendar_days = (end_date - start_date).days + 1
+        total_matching_days = sum(selected_counts.values())
+        base_hours = sum(selected_counts[wd] * weekday_hours.get(wd, 0.0) for wd in selected_counts)
+
+        final_total = convert_total(base_hours, total_matching_days, unit_option)
+
+        st.divider()
+        st.subheader("Results (Single Pattern)")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Total calendar days (inclusive)", total_calendar_days)
+        with c2:
+            st.metric("Days matching selection", total_matching_days)
+        with c3:
+            label = {"Hourly": "Total hours", "15 mins": "Total 15-min units", "Per diem": "Total per-diems (days)"}[unit_option]
+            st.metric(label, f"{final_total:,.2f}")
+
+        with st.expander("Breakdown by weekday"):
+            rows = []
+            for wd in sorted(selected_counts.keys()):
+                day_count = selected_counts[wd]
+                base = day_count * weekday_hours.get(wd, 0.0)
                 converted = convert_total(base, day_count, unit_option)
                 rows.append({
-                    "Pattern": f"Week {bucket}",
                     "Weekday": weekday_labels[wd],
                     "Count in range": day_count,
-                    "Hours per day": hours_AB[bucket].get(wd, 0.0),
+                    "Hours per day": weekday_hours.get(wd, 0.0),
                     "Converted total": converted
                 })
-        df = pd.DataFrame(rows)
-        # Keep only non-zero rows for a cleaner table
-        df = df[(df["Count in range"] > 0) | (df["Converted total"] > 0)]
-        st.dataframe(df, hide_index=True, use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    else:
+        counts_AB, hours_AB = alternating_pattern_ui()
+
+        total_calendar_days = (end_date - start_date).days + 1
+        # Summaries
+        total_days_A = sum(counts_AB["A"].values())
+        total_days_B = sum(counts_AB["B"].values())
+        total_matching_days = total_days_A + total_days_B
+
+        base_hours_A = sum(counts_AB["A"][wd] * hours_AB["A"].get(wd, 0.0) for wd in range(7))
+        base_hours_B = sum(counts_AB["B"][wd] * hours_AB["B"].get(wd, 0.0) for wd in range(7))
+        base_hours_total = base_hours_A + base_hours_B
+
+        final_total_A = convert_total(base_hours_A, total_days_A, unit_option)
+        final_total_B = convert_total(base_hours_B, total_days_B, unit_option)
+        final_total = final_total_A + final_total_B
+
+        st.divider()
+        st.subheader("Results (Alternating Weeks)")
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("Total calendar days (inclusive)", total_calendar_days)
+        with c2:
+            st.metric("Days in Week A pattern", total_days_A)
+        with c3:
+            st.metric("Days in Week B pattern", total_days_B)
+        with c4:
+            label = {"Hourly": "Total hours", "15 mins": "Total 15-min units", "Per diem": "Total per-diems (days)"}[unit_option]
+            st.metric(label, f"{final_total:,.2f}")
+
+        with st.expander("Breakdown by pattern and weekday"):
+            rows = []
+            for bucket in ["A", "B"]:
+                for wd in range(7):
+                    day_count = counts_AB[bucket][wd]
+                    base = day_count * hours_AB[bucket].get(wd, 0.0)
+                    converted = convert_total(base, day_count, unit_option)
+                    rows.append({
+                        "Pattern": f"Week {bucket}",
+                        "Weekday": weekday_labels[wd],
+                        "Count in range": day_count,
+                        "Hours per day": hours_AB[bucket].get(wd, 0.0),
+                        "Converted total": converted
+                    })
+            df = pd.DataFrame(rows)
+            # Keep only non-zero rows for a cleaner table
+            df = df[(df["Count in range"] > 0) | (df["Converted total"] > 0)]
+            st.dataframe(df, hide_index=True, use_container_width=True)
